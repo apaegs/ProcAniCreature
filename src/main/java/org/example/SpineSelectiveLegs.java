@@ -28,14 +28,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
         timer = new Timer(16, this);
         timer.start();
 
-        // Lägg till muslyssnare för att styra målet med musen
-        addMouseMotionListener(new MouseAdapter() {
-            @Override
-            public void mouseMoved(MouseEvent e) {
-                // target.position.setLocation(e.getX(), e.getY());
-            }
-        });
-
         addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -55,14 +47,12 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
     }
 
     private void drawTarget(Graphics2D g2d) {
-        // Rita målet
         g2d.setColor(new Color(255, 100, 100, 150));
         g2d.fill(new Ellipse2D.Double(target.position.x - 8, target.position.y - 8, 16, 16));
         g2d.setColor(Color.RED);
         g2d.setStroke(new BasicStroke(2));
         g2d.draw(new Ellipse2D.Double(target.position.x - 8, target.position.y - 8, 16, 16));
 
-        // Rita en pil som visar riktningen
         double arrowAngle = Math.atan2(target.vy, target.vx);
         int arrowLength = 20;
         int arrowX = (int)(target.position.x + Math.cos(arrowAngle) * arrowLength);
@@ -76,14 +66,12 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
     private void drawFish(Graphics2D g2d) {
         if (fish.segments.isEmpty()) return;
 
-        // Rita kroppen
         List<Point> leftPoints = new ArrayList<>();
         List<Point> rightPoints = new ArrayList<>();
 
         double headAngle = fish.getHeadAngle();
         double headHalfWidth = fish.segments.get(0).size / 2.0;
 
-        // Beräkna huvudets konturpunkter
         leftPoints.add(new Point(
                 (int)(fish.head.x + headHalfWidth * Math.cos(headAngle + Math.PI/2)),
                 (int)(fish.head.y + headHalfWidth * Math.sin(headAngle + Math.PI/2))
@@ -93,7 +81,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
                 (int)(fish.head.y + headHalfWidth * Math.sin(headAngle - Math.PI/2))
         ));
 
-        // Beräkna segmentens konturpunkter
         for (int i = 0; i < fish.segments.size(); i++) {
             FishSegment seg = fish.segments.get(i);
             double angle = seg.angle;
@@ -109,7 +96,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             ));
         }
 
-        // Rita kroppen med gradientfärg
         GeneralPath body = new GeneralPath();
         body.moveTo(leftPoints.get(0).x, leftPoints.get(0).y);
         for (int i = 1; i < leftPoints.size(); i++) {
@@ -120,7 +106,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
         }
         body.closePath();
 
-        // Gradientfyllning
         GradientPaint gradient = new GradientPaint(
                 (float)fish.head.x, (float)fish.head.y, new Color(0, 180, 255),
                 (float)fish.segments.get(fish.segments.size()-1).position.x,
@@ -145,11 +130,9 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             double ex = fish.head.x + eyeOffset * Math.cos(headAngle + side * Math.PI/4);
             double ey = fish.head.y + eyeOffset * Math.sin(headAngle + side * Math.PI/4);
 
-            // Rita ögonvit
             g2d.setColor(Color.WHITE);
             g2d.fill(new Ellipse2D.Double(ex - eyeSize, ey - eyeSize, eyeSize * 2, eyeSize * 2));
 
-            // Rita ögonpupill
             g2d.setColor(Color.BLACK);
             double pupilOffset = eyeSize * 0.3;
             double pupilX = ex + pupilOffset * Math.cos(headAngle);
@@ -219,9 +202,8 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             SpineSelectiveLegs fishPanel = new SpineSelectiveLegs();
             frame.add(fishPanel, BorderLayout.CENTER);
 
-            // --- Förbättrad kontrollpanel ---
             JPanel controls = new JPanel();
-            controls.setLayout(new GridLayout(9, 2, 5, 5)); // Ändrat från 8 till 9 rader
+            controls.setLayout(new GridLayout(10, 2, 5, 5));
             controls.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
             controls.setBackground(Color.DARK_GRAY);
 
@@ -250,32 +232,43 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             controls.add(sizeLabel);
             controls.add(sizeSlider);
 
-            // NY: Segmentavstånd
+            // Segmentavstånd
             JSlider distanceSlider = new JSlider(10, 50, (int)fishPanel.fish.segmentDistance);
             JLabel distanceLabel = new JLabel("Segmentavstånd: " + distanceSlider.getValue() + " px");
             distanceLabel.setForeground(Color.WHITE);
             distanceSlider.addChangeListener(e -> {
-                fishPanel.fish.updateSegmentDistance(distanceSlider.getValue()); // Ta bort baseSizes parametern
+                fishPanel.fish.updateSegmentDistance(distanceSlider.getValue());
                 distanceLabel.setText("Segmentavstånd: " + distanceSlider.getValue() + " px");
                 fishPanel.repaint();
             });
             controls.add(distanceLabel);
             controls.add(distanceSlider);
 
-
+            // Tjockaste delen
+            JSlider peakSlider = new JSlider(0, 100, (int)(fishPanel.fish.peakPosition * 100));
+            JLabel peakLabel = new JLabel("Tjockaste delen: " + peakSlider.getValue() + "%");
+            peakLabel.setForeground(Color.WHITE);
+            peakSlider.addChangeListener(e -> {
+                double peakPos = peakSlider.getValue() / 100.0;
+                fishPanel.fish.updatePeakPosition(peakPos);
+                peakLabel.setText("Tjockaste delen: " + peakSlider.getValue() + "%");
+                fishPanel.repaint();
+            });
+            controls.add(peakLabel);
+            controls.add(peakSlider);
 
             // Styvhet
-            JSlider rigiditySlider = new JSlider(0, 100, (int)(fishPanel.fish.rigidity*100));
+            JSlider rigiditySlider = new JSlider(0, 100, (int)(fishPanel.fish.rigidity * 100));
             JLabel rigidityLabel = new JLabel("Styvhet: " + rigiditySlider.getValue() + "%");
             rigidityLabel.setForeground(Color.WHITE);
             rigiditySlider.addChangeListener(e -> {
-                fishPanel.fish.rigidity = rigiditySlider.getValue()/100.0;
+                fishPanel.fish.rigidity = rigiditySlider.getValue() / 100.0;
                 rigidityLabel.setText("Styvhet: " + rigiditySlider.getValue() + "%");
             });
             controls.add(rigidityLabel);
             controls.add(rigiditySlider);
 
-            // Turn speed
+            // Sväjghastighet
             JSlider turnSlider = new JSlider(10, 2880, (int)Math.toDegrees(fishPanel.fish.fishTurnSpeed));
             JLabel turnLabel = new JLabel("Sväjghastighet: " + turnSlider.getValue() + "°/s");
             turnLabel.setForeground(Color.WHITE);
@@ -286,7 +279,7 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             controls.add(turnLabel);
             controls.add(turnSlider);
 
-            // Fish speed
+            // Fiskhastighet
             JSlider speedSlider = new JSlider(20, 200, (int)fishPanel.fish.fishSpeed);
             JLabel speedLabel = new JLabel("Fiskhastighet: " + speedSlider.getValue() + " px/s");
             speedLabel.setForeground(Color.WHITE);
@@ -297,7 +290,7 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             controls.add(speedLabel);
             controls.add(speedSlider);
 
-            // Target speed
+            // Målhastighet
             JSlider targetSpeedSlider = new JSlider(20, 300, (int)fishPanel.target.speed);
             JLabel targetSpeedLabel = new JLabel("Målhastighet: " + targetSpeedSlider.getValue() + " px/s");
             targetSpeedLabel.setForeground(Color.WHITE);
@@ -317,16 +310,16 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
                 segmentSlider.setValue(10);
                 sizeSlider.setValue(100);
                 distanceSlider.setValue(25);
+                peakSlider.setValue(30);
                 rigiditySlider.setValue(80);
                 turnSlider.setValue(360);
                 speedSlider.setValue(80);
                 targetSpeedSlider.setValue(100);
             });
-            controls.add(new JLabel()); // Tom etikett för layout
+            controls.add(new JLabel());
             controls.add(resetButton);
 
             frame.add(controls, BorderLayout.SOUTH);
-
             frame.pack();
             frame.setLocationRelativeTo(null);
             frame.setVisible(true);
