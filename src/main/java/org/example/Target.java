@@ -9,17 +9,27 @@ public class Target {
 
     public Target(double startX, double startY, double vx, double vy, double speed) {
         position = new Point2D.Double(startX, startY);
-        this.vx = vx;
-        this.vy = vy;
         this.speed = speed;
+
+        // Normalisera initial hastighet
+        double currentSpeed = Math.sqrt(vx * vx + vy * vy);
+        if (currentSpeed > 0) {
+            this.vx = (vx / currentSpeed) * speed;
+            this.vy = (vy / currentSpeed) * speed;
+        } else {
+            this.vx = speed;
+            this.vy = 0;
+        }
     }
 
     public void update(double deltaTime, int width, int height) {
         int margin = 20;
+
+        // Uppdatera position
         position.x += vx * deltaTime;
         position.y += vy * deltaTime;
 
-        // Studsa från kanterna med bättre hantering
+        // Studsa från kanterna
         boolean bounced = false;
         if (position.x < margin) {
             vx = Math.abs(vx);
@@ -52,10 +62,15 @@ public class Target {
     }
 
     public void randomChange() {
+        // 2% chans per frame att ändra riktning
         if (Math.random() < 0.02) {
-            double angle = Math.atan2(vy, vx) + (Math.random() - 0.5) * Math.toRadians(60);
-            vx = Math.cos(angle) * speed;
-            vy = Math.sin(angle) * speed;
+            double currentAngle = Math.atan2(vy, vx);
+            // Ändra riktning med ±30 grader
+            double angleChange = (Math.random() - 0.5) * Math.toRadians(60);
+            double newAngle = currentAngle + angleChange;
+
+            vx = Math.cos(newAngle) * speed;
+            vy = Math.sin(newAngle) * speed;
         }
     }
 }

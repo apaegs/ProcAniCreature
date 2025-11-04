@@ -5,44 +5,55 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Fish {
-    public Point2D.Double head;
     public List<FishSegment> segments = new ArrayList<>();
     private List<Integer> baseSizes;
 
     public double fishSpeed = 80;
     public double fishTurnSpeed = Math.toRadians(360);
     public double rigidity = 0.8;
+    public double flexibility = 0.2;
+    public double selfAvoidance = 0.5;
     public double segmentDistance = 25;
-    public double peakPosition = 0.3;
+    public double peakPosition = 0.5;  // Ändrat till mitt (0.5) för symmetri
     public double sizeScale = 1.0;
+    public double bellyScale = 1.0;
+    public double taperStrength = 1.0;
 
     public Fish(int segmentCount, List<Integer> sizes, double startX, double startY) {
         this.baseSizes = new ArrayList<>(sizes);
-        head = new Point2D.Double(startX, startY);
+
+        // Skapa segment från startposition
         for (int i = 0; i < segmentCount; i++) {
-            int size = i < sizes.size() ? sizes.get(i) : 4;
-            segments.add(new FishSegment(head.x - (i + 1) * segmentDistance, head.y, size));
+            int size = i < sizes.size() ? sizes.get(i) : 20;
+            segments.add(new FishSegment(startX - (i + 1) * segmentDistance, startY, size));
         }
         updateSegmentSizes();
     }
 
     public void moveTowards(Point2D.Double target, double deltaTime) {
-        double dx = target.x - head.x;
-        double dy = target.y - head.y;
+        if (segments.isEmpty()) return;
+
+        FishSegment firstSeg = segments.get(0);
+        double dx = target.x - firstSeg.position.x;
+        double dy = target.y - firstSeg.position.y;
         double targetAngle = Math.atan2(dy, dx);
 
-        double currentHeadAngle = getHeadAngle();
+        double currentHeadAngle = firstSeg.angle;
 
+        // Beräkna kortaste vinkelskillnad
         double angleDiff = targetAngle - currentHeadAngle;
         while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
         while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
 
+        // Begränsa svänghastighet
         double maxTurn = fishTurnSpeed * deltaTime;
         angleDiff = Math.max(-maxTurn, Math.min(maxTurn, angleDiff));
         double newHeadAngle = currentHeadAngle + angleDiff;
 
-        head.x += Math.cos(newHeadAngle) * fishSpeed * deltaTime;
-        head.y += Math.sin(newHeadAngle) * fishSpeed * deltaTime;
+        // Uppdatera första segmentets position
+        firstSeg.position.x += Math.cos(newHeadAngle) * fishSpeed * deltaTime;
+        firstSeg.position.y += Math.sin(newHeadAngle) * fishSpeed * deltaTime;
+        firstSeg.angle = newHeadAngle;
 
         updateSegmentsPosition();
     }
@@ -51,28 +62,70 @@ public class Fish {
         if (segments.isEmpty()) {
             return 0;
         }
-        FishSegment firstSegment = segments.get(0);
-        return Math.atan2(head.y - firstSegment.position.y, head.x - firstSegment.position.x);
+        return segments.get(0).angle;
     }
 
     private void updateSegmentsPosition() {
-        Point2D.Double prev = head;
-        for (FishSegment seg : segments) {
-            double dxSeg = prev.x - seg.position.x;
-            double dySeg = prev.y - seg.position.y;
+        if (segments.isEmpty()) return;
+
+        for (int i = 1; i < segments.size(); i++) {
+            FishSegment currentSeg = segments.get(i);
+            FishSegment prevSeg = segments.get(i - 1);
+
+            double dxSeg = prevSeg.position.x - currentSeg.position.x;
+            double dySeg = prevSeg.position.y - currentSeg.position.y;
             double dist = Math.sqrt(dxSeg * dxSeg + dySeg * dySeg);
 
             if (dist > 0.1) {
                 double dirX = dxSeg / dist;
                 double dirY = dySeg / dist;
-                double targetX = prev.x - dirX * segmentDistance;
-                double targetY = prev.y - dirY * segmentDistance;
-                seg.position.x += (targetX - seg.position.x) * rigidity;
-                seg.position.y += (targetY - seg.position.y) * rigidity;
+                double targetX = prevSeg.position.x - dirX * segmentDistance;
+                double targetY = prevSeg.position.y - dirY * segmentDistance;
 
-                seg.angle = Math.atan2(prev.y - seg.position.y, prev.x - seg.position.x);
+                // Själv-undvikande: Kolla om vi är för nära andra segment
+                if (selfAvoidance > 0.01) {
+                    double avoidX = 0;
+                    double avoidY = 0;
+                    int avoidCount = 0;
+
+                    for (int j = 0; j < segments.size(); j++) {
+                        if (Math.abs(j - i) <= 2) continue; // Skippa närliggande segment
+
+                        FishSegment other = segments.get(j);
+                        double dx = currentSeg.position.x - other.position.x;
+                        double dy = currentSeg.position.y - other.position.y;
+                        double distance = Math.sqrt(dx * dx + dy * dy);
+
+                        double minDistance = (currentSeg.size + other.size) * 0.5;
+                        if (distance < minDistance && distance > 0.1) {
+                            avoidX += (dx / distance) * (minDistance - distance);
+                            avoidY += (dy / distance) * (minDistance - distance);
+                            avoidCount++;
+                        }
+                    }
+
+                    if (avoidCount > 0) {
+                        targetX += avoidX * selfAvoidance;
+                        targetY += avoidY * selfAvoidance;
+                    }
+                }
+
+                // Interpolera position baserat på styvhet
+                currentSeg.position.x += (targetX - currentSeg.position.x) * rigidity;
+                currentSeg.position.y += (targetY - currentSeg.position.y) * rigidity;
+
+                // Beräkna ny vinkel med böjlighet
+                double naturalAngle = Math.atan2(prevSeg.position.y - currentSeg.position.y,
+                        prevSeg.position.x - currentSeg.position.x);
+
+                // Lägg till böjlighetseffekt baserat på position i kroppen
+                double flexFactor = flexibility * (1.0 - (double)i / segments.size());
+                double angleDiff = naturalAngle - prevSeg.angle;
+                while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+                while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+                currentSeg.angle = prevSeg.angle + angleDiff * (1.0 + flexFactor);
             }
-            prev = seg.position;
         }
     }
 
@@ -81,18 +134,27 @@ public class Fish {
         int currentCount = segments.size();
 
         if (newCount > currentCount) {
+            // Lägg till nya segment
             for (int i = currentCount; i < newCount; i++) {
                 Point2D.Double lastPos;
+                double lastAngle;
+
                 if (segments.isEmpty()) {
-                    lastPos = head;
+                    lastPos = new Point2D.Double(0, 0);
+                    lastAngle = 0;
                 } else {
-                    lastPos = segments.get(segments.size() - 1).position;
+                    FishSegment last = segments.get(segments.size() - 1);
+                    lastPos = last.position;
+                    lastAngle = last.angle;
                 }
 
-                int size = i < baseSizes.size() ? baseSizes.get(i) : 4;
-                segments.add(new FishSegment(lastPos.x - segmentDistance, lastPos.y, size));
+                int size = i < baseSizes.size() ? baseSizes.get(i) : 20;
+                double newX = lastPos.x - Math.cos(lastAngle) * segmentDistance;
+                double newY = lastPos.y - Math.sin(lastAngle) * segmentDistance;
+                segments.add(new FishSegment(newX, newY, size));
             }
         } else if (newCount < currentCount) {
+            // Ta bort segment från slutet
             segments.subList(newCount, currentCount).clear();
         }
         updateSegmentSizes();
@@ -109,32 +171,47 @@ public class Fish {
     }
 
     public void updatePeakPosition(double newPeakPosition) {
-        this.peakPosition = newPeakPosition;
+        this.peakPosition = Math.max(0.0, Math.min(1.0, newPeakPosition));
         updateSegmentSizes();
     }
 
-    private void updateSegmentSizes() {
+    public void updateSegmentSizes() {
         if (segments.isEmpty() || baseSizes.isEmpty()) return;
 
         for (int i = 0; i < segments.size(); i++) {
-            int baseSize = i < baseSizes.size() ? baseSizes.get(i) : 4;
+            int baseSize = i < baseSizes.size() ? baseSizes.get(i) : 20;
 
-            double progress = (double) i / (segments.size() - 1);
+            // Beräkna position längs varelsen (0 = fram, 1 = bak)
+            double progress = segments.size() > 1 ? (double) i / (segments.size() - 1) : 0;
+
+            // Beräkna storleksfaktor baserat på peakPosition
             double peakFactor;
-
             if (progress <= peakPosition) {
-                peakFactor = progress / peakPosition;
+                // Från början till toppen
+                peakFactor = peakPosition > 0 ? progress / peakPosition : 1.0;
             } else {
-                peakFactor = 1.0 - ((progress - peakPosition) / (1.0 - peakPosition));
+                // Från toppen till slutet
+                double tailProgress = (progress - peakPosition) / (1.0 - peakPosition);
+                peakFactor = 1.0 - Math.pow(tailProgress, taperStrength);
             }
 
+            // Använd smooth interpolation
             peakFactor = smoothStep(peakFactor);
-            int size = (int)(baseSize * peakFactor * sizeScale);
+
+            // Lägg till bukmåga (mest i mitten)
+            double bellyFactor = 1.0 - Math.abs(progress - 0.5) * 2.0;
+            bellyFactor = bellyFactor * bellyFactor;
+            double bellyBonus = (bellyScale - 1.0) * bellyFactor;
+
+            // Beräkna slutlig storlek
+            int size = (int)(baseSize * peakFactor * (1.0 + bellyBonus) * sizeScale);
             segments.get(i).size = Math.max(2, size);
         }
     }
 
     private double smoothStep(double x) {
+        // Hermite interpolation för mjukare övergångar
+        x = Math.max(0.0, Math.min(1.0, x));
         return x * x * (3 - 2 * x);
     }
 }
