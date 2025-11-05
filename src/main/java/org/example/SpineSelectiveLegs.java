@@ -21,6 +21,9 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
     private float hue = 200f;
     private float opacity = 1.0f;
 
+    private boolean showTarget = true;
+
+
     // SLIDER KONFIGURATION - Enkelt att ändra alla inställningar här
     private static class SliderConfig {
         String name;
@@ -41,17 +44,18 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             new SliderConfig("Segment", 3, 20, 10, "st"),
             new SliderConfig("Storlek", 50, 300, 100, "%"),
             new SliderConfig("Bukmåga", 50, 150, 100, "%"),
-            new SliderConfig("Segmentavstånd", 1, 20, 10, "px"),
-            new SliderConfig("Tjockast vid", 0, 200, 50, "%"),
-            new SliderConfig("Avsmalnande", 10, 400, 100, "%"),
-            new SliderConfig("Styvhet", 5, 50, 25, "%"),
-            new SliderConfig("Böjlighet", 5, 100, 20, "%"),
+            new SliderConfig("Segmentavstånd", 5, 50, 25, "px"),
+            new SliderConfig("Tjockast vid", 0, 100, 50, "%"),
+            new SliderConfig("Avsmalnande", 10, 300, 100, "%"),
+            new SliderConfig("Styvhet", 10, 100, 80, "%"),
+            new SliderConfig("Böjlighet", 0, 100, 20, "%"),
+            new SliderConfig("Vinkel-begränsning", 0, 90, 45, "°"),
             new SliderConfig("Själv-undvikande", 0, 100, 50, "%"),
-            new SliderConfig("Sväng", 10, 2220, 360, "°/s"),
+            new SliderConfig("Sväng", 10, 1440, 360, "°/s"),
             new SliderConfig("Hastighet", 20, 400, 80, "px/s"),
             new SliderConfig("Målhastighet", 20, 600, 100, "px/s"),
             new SliderConfig("Färg (Hue)", 0, 360, 200, "°"),
-            new SliderConfig("Opacitet", 100, 100, 100, "%")
+            new SliderConfig("Opacitet", 20, 100, 100, "%")
     };
 
     public SpineSelectiveLegs() {
@@ -78,8 +82,11 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        drawTarget(g2d);
+        if (showTarget) {
+            drawTarget(g2d);
+        }
         drawCreature(g2d);
+
     }
 
     private void drawTarget(Graphics2D g2d) {
@@ -105,124 +112,74 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
     private void drawCreature(Graphics2D g2d) {
         if (fish.segments.isEmpty()) return;
 
-        List<Point> leftPoints = new ArrayList<>();
-        List<Point> rightPoints = new ArrayList<>();
+        List<Point2D.Double> leftPoints = new ArrayList<>();
+        List<Point2D.Double> rightPoints = new ArrayList<>();
 
-        // Rita från första segmentet istället för separat huvud
         for (FishSegment seg : fish.segments) {
             double angle = seg.angle;
             double halfWidth = seg.size / 2.0;
 
-            leftPoints.add(new Point(
-                    (int)(seg.position.x + halfWidth * Math.cos(angle + Math.PI/2)),
-                    (int)(seg.position.y + halfWidth * Math.sin(angle + Math.PI/2))
+            leftPoints.add(new Point2D.Double(
+                    seg.position.x + halfWidth * Math.cos(angle + Math.PI / 2),
+                    seg.position.y + halfWidth * Math.sin(angle + Math.PI / 2)
             ));
-            rightPoints.add(new Point(
-                    (int)(seg.position.x + halfWidth * Math.cos(angle - Math.PI/2)),
-                    (int)(seg.position.y + halfWidth * Math.sin(angle - Math.PI/2))
+            rightPoints.add(new Point2D.Double(
+                    seg.position.x + halfWidth * Math.cos(angle - Math.PI / 2),
+                    seg.position.y + halfWidth * Math.sin(angle - Math.PI / 2)
             ));
         }
 
         GeneralPath body = new GeneralPath();
 
-        // Rund framsida
-        if (!leftPoints.isEmpty()) {
-            FishSegment firstSeg = fish.segments.get(0);
-            double firstAngle = firstSeg.angle;
-            double radius = firstSeg.size / 2.0;
-
-            // Skapa en rund "nos" framtill
-            int steps = 8;
-            for (int i = 0; i <= steps; i++) {
-                double t = (double)i / steps;
-                double angle = firstAngle + Math.PI/2 + t * Math.PI;
-                double x = firstSeg.position.x + Math.cos(angle) * radius;
-                double y = firstSeg.position.y + Math.sin(angle) * radius;
-                if (i == 0) {
-                    body.moveTo(x, y);
-                } else {
-                    body.lineTo(x, y);
-                }
-            }
+        // --- Vänster sida ---
+        body.moveTo(leftPoints.get(0).x, leftPoints.get(0).y);
+        for (int i = 1; i < leftPoints.size() - 1; i++) {
+            Point2D.Double p0 = leftPoints.get(i);
+            Point2D.Double p1 = leftPoints.get(i + 1);
+            double cx = (p0.x + p1.x) / 2;
+            double cy = (p0.y + p1.y) / 2;
+            body.quadTo(p0.x, p0.y, cx, cy);
         }
 
-        // Höger sida
-        for (int i = 1; i < rightPoints.size(); i++) {
-            body.lineTo(rightPoints.get(i).x, rightPoints.get(i).y);
-        }
-
-        // Rund baksida
-        if (!rightPoints.isEmpty()) {
-            FishSegment lastSeg = fish.segments.get(fish.segments.size() - 1);
-            double lastAngle = lastSeg.angle;
-            double radius = lastSeg.size / 2.0;
-
-            int steps = 8;
-            for (int i = 0; i <= steps; i++) {
-                double t = (double)i / steps;
-                double angle = lastAngle - Math.PI/2 + t * Math.PI;
-                double x = lastSeg.position.x + Math.cos(angle) * radius;
-                double y = lastSeg.position.y + Math.sin(angle) * radius;
-                body.lineTo(x, y);
-            }
-        }
-
-        // Vänster sida (baklänges)
-        for (int i = leftPoints.size() - 2; i >= 0; i--) {
-            body.lineTo(leftPoints.get(i).x, leftPoints.get(i).y);
+        // --- Höger sida (bakifrån framåt) ---
+        int n = rightPoints.size();
+        body.lineTo(rightPoints.get(n - 1).x, rightPoints.get(n - 1).y);
+        for (int i = n - 2; i > 0; i--) {
+            Point2D.Double p0 = rightPoints.get(i);
+            Point2D.Double p1 = rightPoints.get(i - 1);
+            double cx = (p0.x + p1.x) / 2;
+            double cy = (p0.y + p1.y) / 2;
+            body.quadTo(p0.x, p0.y, cx, cy);
         }
 
         body.closePath();
 
+        // --- Färg och fyllning ---
         Color baseColor = Color.getHSBColor(hue / 360f, 0.8f, 1.0f);
         Color darkColor = Color.getHSBColor(hue / 360f, 0.9f, 0.7f);
 
-        int alpha = (int)(opacity * 255);
+        int alpha = (int) (opacity * 255);
         Color gradientStart = new Color(baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue(), alpha);
         Color gradientEnd = new Color(darkColor.getRed(), darkColor.getGreen(), darkColor.getBlue(), alpha);
 
         GradientPaint gradient = new GradientPaint(
-                (float)fish.segments.get(0).position.x, (float)fish.segments.get(0).position.y,
+                (float) fish.segments.get(0).position.x, (float) fish.segments.get(0).position.y,
                 gradientStart,
-                (float)fish.segments.get(fish.segments.size()-1).position.x,
-                (float)fish.segments.get(fish.segments.size()-1).position.y,
+                (float) fish.segments.get(fish.segments.size() - 1).position.x,
+                (float) fish.segments.get(fish.segments.size() - 1).position.y,
                 gradientEnd
         );
+
         g2d.setPaint(gradient);
         g2d.fill(body);
 
-//        Color outlineColor = new Color(darkColor.getRed(), darkColor.getGreen(), darkColor.getBlue(), alpha);
-//        g2d.setColor(outlineColor);
-//        g2d.setStroke(new BasicStroke(2));
-//        g2d.draw(body);
-
-//        drawEyes(g2d);
+        // --- Kontur ---
+        Color outlineColor = new Color(darkColor.getRed(), darkColor.getGreen(), darkColor.getBlue(), alpha);
+        g2d.setColor(outlineColor);
+        g2d.setStroke(new BasicStroke(1.2f));
+        g2d.draw(body);
     }
 
-    private void drawEyes(Graphics2D g2d) {
-        if (fish.segments.isEmpty()) return;
-
-        FishSegment firstSeg = fish.segments.get(0);
-        double headAngle = firstSeg.angle;
-        double headHalfWidth = firstSeg.size / 2.0;
-
-        double eyeOffset = headHalfWidth * 0.6;
-        double eyeSize = headHalfWidth * 0.3;
-
-        for (int side = -1; side <= 1; side += 2) {
-            double ex = firstSeg.position.x + eyeOffset * Math.cos(headAngle + side * Math.PI/4);
-            double ey = firstSeg.position.y + eyeOffset * Math.sin(headAngle + side * Math.PI/4);
-
-            g2d.setColor(Color.WHITE);
-            g2d.fill(new Ellipse2D.Double(ex - eyeSize, ey - eyeSize, eyeSize * 2, eyeSize * 2));
-
-            g2d.setColor(Color.BLACK);
-            double pupilOffset = eyeSize * 0.3;
-            double pupilX = ex + pupilOffset * Math.cos(headAngle);
-            double pupilY = ey + pupilOffset * Math.sin(headAngle);
-            g2d.fill(new Ellipse2D.Double(pupilX - eyeSize * 0.4, pupilY - eyeSize * 0.4, eyeSize * 0.8, eyeSize * 0.8));
-        }
-    }
 
     @Override
     public void actionPerformed(ActionEvent e) {
@@ -367,46 +324,78 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             sliders.add(flexSlider);
             labels.add(flexLabel);
 
-            // 8: Själv-undvikande
+            // 8: Vinkel-begränsning
             SliderConfig cfg8 = SLIDER_CONFIGS[8];
-            JSlider avoidSlider = new JSlider(cfg8.min, cfg8.max, cfg8.defaultValue);
-            JLabel avoidLabel = new JLabel(fishPanel.formatSliderValue(8, cfg8.defaultValue));
+            JSlider angleSlider = new JSlider(cfg8.min, cfg8.max, cfg8.defaultValue);
+            JLabel angleLabel = new JLabel(fishPanel.formatSliderValue(8, cfg8.defaultValue));
+            angleSlider.addChangeListener(evt -> {
+                fishPanel.fish.maxAngleDiff = Math.toRadians(angleSlider.getValue());
+                angleLabel.setText(fishPanel.formatSliderValue(8, angleSlider.getValue()));
+            });
+            controls.add(createSliderPanel(angleLabel, angleSlider));
+            sliders.add(angleSlider);
+            labels.add(angleLabel);
+
+            // 9: Själv-undvikande
+            SliderConfig cfg9 = SLIDER_CONFIGS[9];
+            JSlider avoidSlider = new JSlider(cfg9.min, cfg9.max, cfg9.defaultValue);
+            JLabel avoidLabel = new JLabel(fishPanel.formatSliderValue(9, cfg9.defaultValue));
             avoidSlider.addChangeListener(evt -> {
                 fishPanel.fish.selfAvoidance = avoidSlider.getValue() / 100.0;
-                avoidLabel.setText(fishPanel.formatSliderValue(8, avoidSlider.getValue()));
+                avoidLabel.setText(fishPanel.formatSliderValue(9, avoidSlider.getValue()));
             });
             controls.add(createSliderPanel(avoidLabel, avoidSlider));
             sliders.add(avoidSlider);
             labels.add(avoidLabel);
 
-            // 9: Sväjghastighet
-            SliderConfig cfg9 = SLIDER_CONFIGS[9];
-            JSlider turnSlider = new JSlider(cfg9.min, cfg9.max, cfg9.defaultValue);
-            JLabel turnLabel = new JLabel(fishPanel.formatSliderValue(9, cfg9.defaultValue));
+            // 10: Sväjghastighet
+            SliderConfig cfg10 = SLIDER_CONFIGS[10];
+            JSlider turnSlider = new JSlider(cfg10.min, cfg10.max, cfg10.defaultValue);
+            JLabel turnLabel = new JLabel(fishPanel.formatSliderValue(10, cfg10.defaultValue));
             turnSlider.addChangeListener(evt -> {
                 fishPanel.fish.fishTurnSpeed = Math.toRadians(turnSlider.getValue());
-                turnLabel.setText(fishPanel.formatSliderValue(9, turnSlider.getValue()));
+                turnLabel.setText(fishPanel.formatSliderValue(10, turnSlider.getValue()));
             });
             controls.add(createSliderPanel(turnLabel, turnSlider));
             sliders.add(turnSlider);
             labels.add(turnLabel);
 
-            // 10: Fiskhastighet
-            SliderConfig cfg10 = SLIDER_CONFIGS[10];
-            JSlider speedSlider = new JSlider(cfg10.min, cfg10.max, cfg10.defaultValue);
-            JLabel speedLabel = new JLabel(fishPanel.formatSliderValue(10, cfg10.defaultValue));
+            // 13: Färg (Hue)
+            SliderConfig cfg13 = SLIDER_CONFIGS[13];
+            JSlider hueSlider = new JSlider(cfg13.min, cfg13.max, cfg13.defaultValue);
+            JLabel hueLabel = new JLabel(fishPanel.formatSliderValue(13, cfg13.defaultValue));
+            hueSlider.addChangeListener(evt -> {
+                fishPanel.hue = hueSlider.getValue();
+                hueLabel.setText(fishPanel.formatSliderValue(13, hueSlider.getValue()));
+                fishPanel.repaint();
+            });
+            controls.add(createSliderPanel(hueLabel, hueSlider));
+
+// 14: Opacitet
+            SliderConfig cfg14 = SLIDER_CONFIGS[14];
+            JSlider opacitySlider = new JSlider(cfg14.min, cfg14.max, cfg14.defaultValue);
+            JLabel opacityLabel = new JLabel(fishPanel.formatSliderValue(14, cfg14.defaultValue));
+            opacitySlider.addChangeListener(evt -> {
+                fishPanel.opacity = opacitySlider.getValue() / 100.0f;
+                opacityLabel.setText(fishPanel.formatSliderValue(14, opacitySlider.getValue()));
+                fishPanel.repaint();
+            });
+            controls.add(createSliderPanel(opacityLabel, opacitySlider));
+
+// 11: Fiskhastighet
+            SliderConfig cfg11 = SLIDER_CONFIGS[11];
+            JSlider speedSlider = new JSlider(cfg11.min, cfg11.max, cfg11.defaultValue);
+            JLabel speedLabel = new JLabel(fishPanel.formatSliderValue(11, cfg11.defaultValue));
             speedSlider.addChangeListener(evt -> {
                 fishPanel.fish.fishSpeed = speedSlider.getValue();
-                speedLabel.setText(fishPanel.formatSliderValue(10, speedSlider.getValue()));
+                speedLabel.setText(fishPanel.formatSliderValue(11, speedSlider.getValue()));
             });
             controls.add(createSliderPanel(speedLabel, speedSlider));
-            sliders.add(speedSlider);
-            labels.add(speedLabel);
 
-            // 11: Målhastighet
-            SliderConfig cfg11 = SLIDER_CONFIGS[11];
-            JSlider targetSpeedSlider = new JSlider(cfg11.min, cfg11.max, cfg11.defaultValue);
-            JLabel targetSpeedLabel = new JLabel(fishPanel.formatSliderValue(11, cfg11.defaultValue));
+// 12: Målhastighet
+            SliderConfig cfg12 = SLIDER_CONFIGS[12];
+            JSlider targetSpeedSlider = new JSlider(cfg12.min, cfg12.max, cfg12.defaultValue);
+            JLabel targetSpeedLabel = new JLabel(fishPanel.formatSliderValue(12, cfg12.defaultValue));
             targetSpeedSlider.addChangeListener(evt -> {
                 fishPanel.target.speed = targetSpeedSlider.getValue();
                 double currentSpeed = Math.sqrt(fishPanel.target.vx * fishPanel.target.vx +
@@ -416,39 +405,13 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
                     fishPanel.target.vx = Math.cos(angle) * fishPanel.target.speed;
                     fishPanel.target.vy = Math.sin(angle) * fishPanel.target.speed;
                 }
-                targetSpeedLabel.setText(fishPanel.formatSliderValue(11, targetSpeedSlider.getValue()));
+                targetSpeedLabel.setText(fishPanel.formatSliderValue(12, targetSpeedSlider.getValue()));
             });
             controls.add(createSliderPanel(targetSpeedLabel, targetSpeedSlider));
-            sliders.add(targetSpeedSlider);
-            labels.add(targetSpeedLabel);
-
-            // 12: Färg (Hue)
-            SliderConfig cfg12 = SLIDER_CONFIGS[12];
-            JSlider hueSlider = new JSlider(cfg12.min, cfg12.max, cfg12.defaultValue);
-            JLabel hueLabel = new JLabel(fishPanel.formatSliderValue(12, cfg12.defaultValue));
-            hueSlider.addChangeListener(evt -> {
-                fishPanel.hue = hueSlider.getValue();
-                hueLabel.setText(fishPanel.formatSliderValue(12, hueSlider.getValue()));
-                fishPanel.repaint();
-            });
-            controls.add(createSliderPanel(hueLabel, hueSlider));
-            sliders.add(hueSlider);
-            labels.add(hueLabel);
-
-            // 13: Opacitet
-            SliderConfig cfg13 = SLIDER_CONFIGS[13];
-            JSlider opacitySlider = new JSlider(cfg13.min, cfg13.max, cfg13.defaultValue);
-            JLabel opacityLabel = new JLabel(fishPanel.formatSliderValue(13, cfg13.defaultValue));
-            opacitySlider.addChangeListener(evt -> {
-                fishPanel.opacity = opacitySlider.getValue() / 100.0f;
-                opacityLabel.setText(fishPanel.formatSliderValue(13, opacitySlider.getValue()));
-                fishPanel.repaint();
-            });
-            controls.add(createSliderPanel(opacityLabel, opacitySlider));
             sliders.add(opacitySlider);
             labels.add(opacityLabel);
 
-            // Reset-knapp
+            // Knappar
             controls.add(Box.createVerticalStrut(5));
 
             JPanel buttonPanel = new JPanel(new GridLayout(1, 2, 5, 0));
@@ -461,7 +424,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             resetButton.addActionListener(evt -> {
                 for (int i = 0; i < sliders.size(); i++) {
                     sliders.get(i).setValue(SLIDER_CONFIGS[i].defaultValue);
-                    labels.get(i).setText(fishPanel.formatSliderValue(i, SLIDER_CONFIGS[i].defaultValue));
                 }
             });
 
@@ -473,13 +435,22 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
                     SliderConfig cfg = SLIDER_CONFIGS[i];
                     int randomValue = cfg.min + (int)(Math.random() * (cfg.max - cfg.min + 1));
                     sliders.get(i).setValue(randomValue);
-                    labels.get(i).setText(fishPanel.formatSliderValue(i, randomValue));
                 }
             });
 
             buttonPanel.add(resetButton);
             buttonPanel.add(randomButton);
             controls.add(buttonPanel);
+
+            JCheckBox showTargetBox = new JCheckBox("Visa mål");
+            showTargetBox.setSelected(true);
+            showTargetBox.setFocusable(false);
+            showTargetBox.setForeground(new Color(200, 200, 200));
+            showTargetBox.setBackground(new Color(40, 40, 40));
+            showTargetBox.setFont(new Font("Arial", Font.PLAIN, 11));
+            showTargetBox.addActionListener(evt -> fishPanel.showTarget = showTargetBox.isSelected());
+            controls.add(showTargetBox);
+
 
             JScrollPane scrollPane = new JScrollPane(controls);
             scrollPane.setBorder(null);

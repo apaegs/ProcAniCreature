@@ -13,8 +13,9 @@ public class Fish {
     public double rigidity = 0.8;
     public double flexibility = 0.2;
     public double selfAvoidance = 0.5;
+    public double maxAngleDiff = Math.toRadians(45);  // Max vinkelskillnad mellan segment
     public double segmentDistance = 25;
-    public double peakPosition = 0.5;  // Ändrat till mitt (0.5) för symmetri
+    public double peakPosition = 0.5;
     public double sizeScale = 1.0;
     public double bellyScale = 1.0;
     public double taperStrength = 1.0;
