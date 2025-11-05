@@ -246,7 +246,7 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("Autonom varelse med förbättrad simulering");
+            JFrame frame = new JFrame("ProcAniCreature");
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.setLayout(new BorderLayout());
 
