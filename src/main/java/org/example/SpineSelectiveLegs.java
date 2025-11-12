@@ -3,6 +3,7 @@ package org.example;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.geom.AffineTransform;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.GeneralPath;
 import java.awt.geom.Point2D;
@@ -13,6 +14,7 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
 
     private Fish fish;
     private Target target;
+    private Camera camera;
     private final List<Integer> baseSizes = List.of(30, 32, 34, 35, 34, 32, 28, 24, 18, 12);
 
     private final Timer timer;
@@ -22,7 +24,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
     private float opacity = 1.0f;
 
     private boolean showTarget = true;
-
 
     // SLIDER KONFIGURATION - Enkelt att ändra alla inställningar här
     private static class SliderConfig {
@@ -45,7 +46,7 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             new SliderConfig("Storlek", 50, 300, 100, "%"),
             new SliderConfig("Bukmåga", 50, 150, 100, "%"),
             new SliderConfig("Segmentavstånd", 5, 50, 25, "px"),
-            new SliderConfig("Tjockast vid", 0, 100, 50, "%"),
+            new SliderConfig("Tjockast vid", 5, 95, 50, "%"),
             new SliderConfig("Avsmalnande", 10, 300, 100, "%"),
             new SliderConfig("Styvhet", 10, 100, 80, "%"),
             new SliderConfig("Böjlighet", 0, 100, 20, "%"),
@@ -62,8 +63,9 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
         setBackground(Color.BLACK);
         setPreferredSize(new Dimension(800, 600));
 
-        fish = new Fish(10, baseSizes, 300, 300);
-        target = new Target(400, 300, 80, 50, 100);
+        camera = new Camera(800, 600);
+        fish = new Fish(10, baseSizes, 400, 300);
+        target = new Target(500, 300, 80, 50, 100);
 
         timer = new Timer(16, this);
         timer.start();
@@ -71,7 +73,24 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
         addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                target.position.setLocation(e.getX(), e.getY());
+                Point2D.Double worldPos = camera.screenToWorld(e.getX(), e.getY());
+                target.position.setLocation(worldPos.x, worldPos.y);
+            }
+        });
+
+        addMouseWheelListener(e -> {
+            if (e.getWheelRotation() < 0) {
+                camera.zoomIn(e.getX(), e.getY());
+            } else {
+                camera.zoomOut(e.getX(), e.getY());
+            }
+            repaint();
+        });
+
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                camera.setViewSize(getWidth(), getHeight());
             }
         });
     }
@@ -82,11 +101,29 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+        // Spara ursprunglig transform
+        AffineTransform originalTransform = g2d.getTransform();
+
+        // Applicera kamera-transformation
+        AffineTransform cameraTransform = new AffineTransform();
+        cameraTransform.translate(getWidth() / 2.0, getHeight() / 2.0);
+        cameraTransform.scale(camera.zoom, camera.zoom);
+        cameraTransform.translate(-camera.x, -camera.y);
+        g2d.setTransform(cameraTransform);
+
+        // Rita allt i världskoordinater
         if (showTarget) {
             drawTarget(g2d);
         }
         drawCreature(g2d);
 
+        // Återställ transform för UI-element
+        g2d.setTransform(originalTransform);
+
+        // Rita zoom-info
+        g2d.setColor(new Color(200, 200, 200, 180));
+        g2d.setFont(new Font("Arial", Font.PLAIN, 11));
+        g2d.drawString(String.format("Zoom: %.1fx", camera.getZoom()), 10, 20);
     }
 
     private void drawTarget(Graphics2D g2d) {
@@ -129,57 +166,89 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             ));
         }
 
-        GeneralPath body = new GeneralPath();
-
-        // --- Vänster sida ---
-        body.moveTo(leftPoints.get(0).x, leftPoints.get(0).y);
-        for (int i = 1; i < leftPoints.size() - 1; i++) {
-            Point2D.Double p0 = leftPoints.get(i);
-            Point2D.Double p1 = leftPoints.get(i + 1);
-            double cx = (p0.x + p1.x) / 2;
-            double cy = (p0.y + p1.y) / 2;
-            body.quadTo(p0.x, p0.y, cx, cy);
+        // Kontrollera att sidorna inte bytt plats
+        if (leftPoints.size() > 1) {
+            Point2D.Double p0 = fish.segments.get(0).position;
+            Point2D.Double l0 = leftPoints.get(0);
+            Point2D.Double r0 = rightPoints.get(0);
+            double baseCross = Math.signum((l0.x - p0.x) * (r0.y - p0.y) - (l0.y - p0.y) * (r0.x - p0.x));
+            if (baseCross < 0) {
+                List<Point2D.Double> tmp = leftPoints;
+                leftPoints = rightPoints;
+                rightPoints = tmp;
+            }
         }
 
-        // --- Höger sida (bakifrån framåt) ---
-        int n = rightPoints.size();
-        body.lineTo(rightPoints.get(n - 1).x, rightPoints.get(n - 1).y);
-        for (int i = n - 2; i > 0; i--) {
-            Point2D.Double p0 = rightPoints.get(i);
-            Point2D.Double p1 = rightPoints.get(i - 1);
-            double cx = (p0.x + p1.x) / 2;
-            double cy = (p0.y + p1.y) / 2;
-            body.quadTo(p0.x, p0.y, cx, cy);
+        GeneralPath body = new GeneralPath();
+
+        // Smoothing med Catmull-Rom
+        List<Point2D.Double> smoothLeft = catmullRom(leftPoints);
+        List<Point2D.Double> smoothRight = catmullRom(rightPoints);
+
+        // Vänster sida
+        body.moveTo(smoothLeft.get(0).x, smoothLeft.get(0).y);
+        for (int i = 1; i < smoothLeft.size(); i++) {
+            body.lineTo(smoothLeft.get(i).x, smoothLeft.get(i).y);
+        }
+
+        // Höger sida bakåt
+        for (int i = smoothRight.size() - 1; i >= 0; i--) {
+            body.lineTo(smoothRight.get(i).x, smoothRight.get(i).y);
         }
 
         body.closePath();
 
-        // --- Färg och fyllning ---
+        // Gradient och kontur
         Color baseColor = Color.getHSBColor(hue / 360f, 0.8f, 1.0f);
         Color darkColor = Color.getHSBColor(hue / 360f, 0.9f, 0.7f);
-
         int alpha = (int) (opacity * 255);
-        Color gradientStart = new Color(baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue(), alpha);
-        Color gradientEnd = new Color(darkColor.getRed(), darkColor.getGreen(), darkColor.getBlue(), alpha);
-
         GradientPaint gradient = new GradientPaint(
                 (float) fish.segments.get(0).position.x, (float) fish.segments.get(0).position.y,
-                gradientStart,
+                new Color(baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue(), alpha),
                 (float) fish.segments.get(fish.segments.size() - 1).position.x,
                 (float) fish.segments.get(fish.segments.size() - 1).position.y,
-                gradientEnd
+                new Color(darkColor.getRed(), darkColor.getGreen(), darkColor.getBlue(), alpha)
         );
 
         g2d.setPaint(gradient);
         g2d.fill(body);
 
-        // --- Kontur ---
-        Color outlineColor = new Color(darkColor.getRed(), darkColor.getGreen(), darkColor.getBlue(), alpha);
-        g2d.setColor(outlineColor);
+        g2d.setColor(new Color(darkColor.getRed(), darkColor.getGreen(), darkColor.getBlue(), alpha));
         g2d.setStroke(new BasicStroke(1.2f));
         g2d.draw(body);
     }
 
+    private List<Point2D.Double> catmullRom(List<Point2D.Double> points) {
+        List<Point2D.Double> result = new ArrayList<>();
+        if (points.size() < 2) return points;
+
+        for (int i = 0; i < points.size() - 1; i++) {
+            Point2D.Double p0 = i > 0 ? points.get(i - 1) : points.get(i);
+            Point2D.Double p1 = points.get(i);
+            Point2D.Double p2 = points.get(i + 1);
+            Point2D.Double p3 = i + 2 < points.size() ? points.get(i + 2) : points.get(i + 1);
+
+            for (double t = 0; t < 1; t += 0.3) {
+                double t2 = t * t;
+                double t3 = t2 * t;
+
+                double x = 0.5 * ((2 * p1.x) +
+                        (-p0.x + p2.x) * t +
+                        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+
+                double y = 0.5 * ((2 * p1.y) +
+                        (-p0.y + p2.y) * t +
+                        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+
+                result.add(new Point2D.Double(x, y));
+            }
+        }
+
+        result.add(points.get(points.size() - 1));
+        return result;
+    }
 
     @Override
     public void actionPerformed(ActionEvent e) {
@@ -188,10 +257,21 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
         lastTime = now;
         deltaTime = Math.min(deltaTime, 0.1);
 
-        target.update(deltaTime, getWidth(), getHeight());
+        // Uppdatera target med världens storlek baserat på zoom
+        double worldWidth = camera.getWorldWidth();
+        double worldHeight = camera.getWorldHeight();
+        double worldLeft = camera.x - worldWidth / 2;
+        double worldTop = camera.y - worldHeight / 2;
+
+        target.updateWithBounds(deltaTime, worldLeft, worldTop, worldWidth, worldHeight);
         target.randomChange();
 
         fish.moveTowards(target.position, deltaTime);
+
+        // Följ fisken med kameran (mjukt)
+        double smoothness = 0.05;
+        camera.x += (fish.segments.get(0).position.x - camera.x) * smoothness;
+        camera.y += (fish.segments.get(0).position.y - camera.y) * smoothness;
 
         repaint();
     }
@@ -215,7 +295,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             controls.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
             controls.setBackground(new Color(40, 40, 40));
 
-            // Lagra alla sliders och labels för reset
             List<JSlider> sliders = new ArrayList<>();
             List<JLabel> labels = new ArrayList<>();
 
@@ -360,29 +439,7 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             sliders.add(turnSlider);
             labels.add(turnLabel);
 
-            // 13: Färg (Hue)
-            SliderConfig cfg13 = SLIDER_CONFIGS[13];
-            JSlider hueSlider = new JSlider(cfg13.min, cfg13.max, cfg13.defaultValue);
-            JLabel hueLabel = new JLabel(fishPanel.formatSliderValue(13, cfg13.defaultValue));
-            hueSlider.addChangeListener(evt -> {
-                fishPanel.hue = hueSlider.getValue();
-                hueLabel.setText(fishPanel.formatSliderValue(13, hueSlider.getValue()));
-                fishPanel.repaint();
-            });
-            controls.add(createSliderPanel(hueLabel, hueSlider));
-
-// 14: Opacitet
-            SliderConfig cfg14 = SLIDER_CONFIGS[14];
-            JSlider opacitySlider = new JSlider(cfg14.min, cfg14.max, cfg14.defaultValue);
-            JLabel opacityLabel = new JLabel(fishPanel.formatSliderValue(14, cfg14.defaultValue));
-            opacitySlider.addChangeListener(evt -> {
-                fishPanel.opacity = opacitySlider.getValue() / 100.0f;
-                opacityLabel.setText(fishPanel.formatSliderValue(14, opacitySlider.getValue()));
-                fishPanel.repaint();
-            });
-            controls.add(createSliderPanel(opacityLabel, opacitySlider));
-
-// 11: Fiskhastighet
+            // 11: Fiskhastighet
             SliderConfig cfg11 = SLIDER_CONFIGS[11];
             JSlider speedSlider = new JSlider(cfg11.min, cfg11.max, cfg11.defaultValue);
             JLabel speedLabel = new JLabel(fishPanel.formatSliderValue(11, cfg11.defaultValue));
@@ -391,8 +448,10 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
                 speedLabel.setText(fishPanel.formatSliderValue(11, speedSlider.getValue()));
             });
             controls.add(createSliderPanel(speedLabel, speedSlider));
+            sliders.add(speedSlider);
+            labels.add(speedLabel);
 
-// 12: Målhastighet
+            // 12: Målhastighet
             SliderConfig cfg12 = SLIDER_CONFIGS[12];
             JSlider targetSpeedSlider = new JSlider(cfg12.min, cfg12.max, cfg12.defaultValue);
             JLabel targetSpeedLabel = new JLabel(fishPanel.formatSliderValue(12, cfg12.defaultValue));
@@ -408,6 +467,32 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
                 targetSpeedLabel.setText(fishPanel.formatSliderValue(12, targetSpeedSlider.getValue()));
             });
             controls.add(createSliderPanel(targetSpeedLabel, targetSpeedSlider));
+            sliders.add(targetSpeedSlider);
+            labels.add(targetSpeedLabel);
+
+            // 13: Färg (Hue)
+            SliderConfig cfg13 = SLIDER_CONFIGS[13];
+            JSlider hueSlider = new JSlider(cfg13.min, cfg13.max, cfg13.defaultValue);
+            JLabel hueLabel = new JLabel(fishPanel.formatSliderValue(13, cfg13.defaultValue));
+            hueSlider.addChangeListener(evt -> {
+                fishPanel.hue = hueSlider.getValue();
+                hueLabel.setText(fishPanel.formatSliderValue(13, hueSlider.getValue()));
+                fishPanel.repaint();
+            });
+            controls.add(createSliderPanel(hueLabel, hueSlider));
+            sliders.add(hueSlider);
+            labels.add(hueLabel);
+
+            // 14: Opacitet
+            SliderConfig cfg14 = SLIDER_CONFIGS[14];
+            JSlider opacitySlider = new JSlider(cfg14.min, cfg14.max, cfg14.defaultValue);
+            JLabel opacityLabel = new JLabel(fishPanel.formatSliderValue(14, cfg14.defaultValue));
+            opacitySlider.addChangeListener(evt -> {
+                fishPanel.opacity = opacitySlider.getValue() / 100.0f;
+                opacityLabel.setText(fishPanel.formatSliderValue(14, opacitySlider.getValue()));
+                fishPanel.repaint();
+            });
+            controls.add(createSliderPanel(opacityLabel, opacitySlider));
             sliders.add(opacitySlider);
             labels.add(opacityLabel);
 
@@ -450,7 +535,6 @@ public class SpineSelectiveLegs extends JPanel implements ActionListener {
             showTargetBox.setFont(new Font("Arial", Font.PLAIN, 11));
             showTargetBox.addActionListener(evt -> fishPanel.showTarget = showTargetBox.isSelected());
             controls.add(showTargetBox);
-
 
             JScrollPane scrollPane = new JScrollPane(controls);
             scrollPane.setBorder(null);

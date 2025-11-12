@@ -61,6 +61,45 @@ public class Target {
         }
     }
 
+    public void updateWithBounds(double deltaTime, double worldLeft, double worldTop, double worldWidth, double worldHeight) {
+        int margin = 20;
+
+        // Uppdatera position
+        position.x += vx * deltaTime;
+        position.y += vy * deltaTime;
+
+        // Studsa från kanterna
+        boolean bounced = false;
+        if (position.x < worldLeft + margin) {
+            vx = Math.abs(vx);
+            position.x = worldLeft + margin;
+            bounced = true;
+        } else if (position.x > worldLeft + worldWidth - margin) {
+            vx = -Math.abs(vx);
+            position.x = worldLeft + worldWidth - margin;
+            bounced = true;
+        }
+
+        if (position.y < worldTop + margin) {
+            vy = Math.abs(vy);
+            position.y = worldTop + margin;
+            bounced = true;
+        } else if (position.y > worldTop + worldHeight - margin) {
+            vy = -Math.abs(vy);
+            position.y = worldTop + worldHeight - margin;
+            bounced = true;
+        }
+
+        // Normalisera hastigheten efter studs
+        if (bounced) {
+            double currentSpeed = Math.sqrt(vx * vx + vy * vy);
+            if (currentSpeed > 0) {
+                vx = (vx / currentSpeed) * speed;
+                vy = (vy / currentSpeed) * speed;
+            }
+        }
+    }
+
     public void randomChange() {
         // 2% chans per frame att ändra riktning
         if (Math.random() < 0.02) {
